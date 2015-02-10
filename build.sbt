@@ -15,4 +15,3 @@ lazy val root = (project in file(".")).
     publishMavenStyle := false,
     credentials += Credentials(Path.userHome / ".ivy2" / ".sbtcredentials")
   )
-    
