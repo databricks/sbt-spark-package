@@ -1,10 +1,3 @@
-name := "sbt-spark-packages-dev"
-
-version := "0.1"
-
-scalaVersion := "2.10.4"
-
-//libraryDependencies += "com.eed3si9n" % "sbt-assembly" % "0.12.0"
 addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "0.12.0")
 
 lazy val root = (project in file(".")).
@@ -12,7 +5,7 @@ lazy val root = (project in file(".")).
     sbtPlugin := true,
     name := "sbt-spark-packages",
     organization := "databricks",
-    version := "0.1-SNAPSHOT",
+    version := "0.1",
     description := "sbt plugin to develop, use, and publish Spark Packages",
     // licenses := Seq("Apache-2.0 License" -> url("https://github.com/brkyvz/sbt-spark-packages/blob/master/LICENSE")),
     publishMavenStyle := false
