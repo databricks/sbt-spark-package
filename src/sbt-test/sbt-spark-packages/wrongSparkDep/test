@@ -1,0 +1,5 @@
+-> spMakeDistribution
+-$ exists target/simple-0.1.zip
+# makeAssembly fails too
+-> spMakeAssembly
+-$ exists target/scala-2.10/hello-assembly-0.1.jar
