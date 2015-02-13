@@ -97,10 +97,14 @@ object SparkPackagesPlugin extends AutoPlugin {
       mappings in spPackWithPython := (mappings in (Compile, packageBin)).value ++ {
         val pythonDirectory: Seq[File] = listFilesRecursively(baseDirectory.value / "python")
         val pythonBase = baseDirectory.value / "python"
-        pythonDirectory.filter(f => f.getPath().indexOf("lib") == -1 && f.getPath().indexOf("bin") == -1 &&
-          f.getPath().indexOf("doc") == -1)
-          .filter(f => f.getPath().indexOf(".pyc") > -1) ++
-          Seq(baseDirectory.value / "python" / "requirements.txt") pair relativeTo(pythonBase)
+        val pythonReqPath = baseDirectory.value / "python" / "requirements.txt"
+        val pythonReq = if (pythonReqPath.exists()) Seq(pythonReqPath) else Seq()
+        val pythonBinaries = pythonDirectory.filter { f => 
+            f.getPath().indexOf("lib") == -1 && f.getPath().indexOf("bin") == -1 &&
+            f.getPath().indexOf("doc") == -1
+          }.filter(f => f.getPath().indexOf(".pyc") > -1)
+        
+         pythonBinaries ++ pythonReq pair relativeTo(pythonBase)
       },
       pomPostProcess in spMakeDistribution := { (node: Node) =>
         val names = sparkPackageName.value.split("/")

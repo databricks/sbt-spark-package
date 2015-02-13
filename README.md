@@ -44,7 +44,7 @@ Please specify any Spark dependencies using `sparkVersion` and `sparkComponents`
 
  or
 
- * `sparkComponents ++= Seq("streaming", "sql") // adds dependencies to spark-sql and spark-streaming.`
+ * `sparkComponents ++= Seq("streaming", "sql")`
  
 You can make a zip archive ready for a release on the Spark Packages website by simply calling
 `sbt spMakeDistribution`. This command will include any python files related to your package in the 
