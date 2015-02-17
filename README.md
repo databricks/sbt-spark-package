@@ -14,6 +14,15 @@ Requirements
 Setup
 -----
 
+### The sbt way
+
+Simply add the following to `<your_project>/project/plugins.sbt`:
+```scala
+  resolvers += "Spark Package Test Repo" at "https://dl.bintray.com/brkyvz/maven"
+
+  addSbtPlugin("org.spark-packages" % "sbt-spark-package" % "0.1")
+```
+
 ### Manually
 
 * Clone this repository to your local environment
@@ -47,14 +56,14 @@ Please specify any Spark dependencies using `sparkVersion` and `sparkComponents`
  * `sparkComponents ++= Seq("streaming", "sql")`
  
 You can make a zip archive ready for a release on the Spark Packages website by simply calling
-`sbt spMakeDistribution`. This command will include any python files related to your package in the 
+`sbt spDist`. This command will include any python files related to your package in the
  jar inside this archive. When this jar is added to your PYTHONPATH, you will be able to use your
  Python files.
 
 By default, the zip file will be produced in `<project>/target`, but you can 
-override this by providing a value for `spDistributionDirectory` like:
+override this by providing a value for `spDistDirectory` like:
 
-`spDistributionDirectory := "Users" / "foo" / "Documents" / "bar"`
+`spDistDirectory := "Users" / "foo" / "Documents" / "bar"`
 
 The slashes should still remain as slashes on a Windows system, don't switch them to backslashes.
 
@@ -65,4 +74,4 @@ Any Spark Packages your package depends on can be added as:
  * `sparkPackageDependencies += "databricks/spark-avro:0.1" // format is spark-package-name:version`
  
 We also recommend that you use `sparkVersion` and `sparkComponents` to manage your Spark dependencies.
-In addition, you can use `sbt spMakeAssembly` to create an uber jar of your project.
+In addition, you can use `sbt assembly` to create an uber jar of your project.
