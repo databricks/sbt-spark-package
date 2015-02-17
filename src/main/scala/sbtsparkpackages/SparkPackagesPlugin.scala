@@ -5,7 +5,9 @@ import Keys._
 import Path.relativeTo
 import sbtassembly.AssemblyPlugin
 import sbtassembly.AssemblyKeys.{assembledMappings, assembly, assemblyPackageScala}
-import scala.xml.{Elem, Node, Text}
+import scala.io.Source._
+import scala.xml.{Elem, Node, NodeBuffer, NodeSeq, Null, Text, TopScope}
+import java.io.{File => JavaFile}
 
 object SparkPackagesPlugin extends AutoPlugin {
 
@@ -18,9 +20,9 @@ object SparkPackagesPlugin extends AutoPlugin {
     val sparkPackageDependencies = settingKey[Seq[String]]("The Spark Package dependencies")
     val sparkPackageNamespace = settingKey[String]("The namespace to use for shading while building " +
       "the assembly jar.")
-    val spMakeDistribution = taskKey[Unit]("Generate a zip archive for distribution on the Spark Packages website.")
+    val spDist = taskKey[Unit]("Generate a zip archive for distribution on the Spark Packages website.")
     val spMakeAssembly = taskKey[File]("Generate a fat jar including all dependencies (excluding Spark).")
-    val spDistributionDirectory = settingKey[File]("Directory to output the zip archive.")
+    val spDistDirectory = settingKey[File]("Directory to output the zip archive.")
     val spPackWithPython = taskKey[File]("Packs the Jar including Python files")
 
     val defaultSPSettings = Seq(
@@ -28,7 +30,7 @@ object SparkPackagesPlugin extends AutoPlugin {
       sparkComponents := Seq(),
       sparkVersion := "1.2.0",
       sparkPackageName := "dummy",
-      spDistributionDirectory := baseDirectory.value
+      spDistDirectory := baseDirectory.value
     )
   }
 
@@ -66,11 +68,64 @@ object SparkPackagesPlugin extends AutoPlugin {
       }.reduce(_ && _)
     }
 
+  private def validateReturnSPDep(line: String): (String, String, String) = {
+    val firstSplit = line.split("==")
+    if (firstSplit.length != 2) {
+      throw new IllegalArgumentException("Spark Package dependencies must be supplied as: " +
+        s"`:package_name==:version` in spark-package-deps.txt. Found: $line")
+    }
+    val package_name = firstSplit(0)
+    val version = firstSplit(1)
+    val secondSplit = package_name.split("/")
+    if (secondSplit.length != 2) {
+      throw new IllegalArgumentException("Spark Package names must be supplied as: " +
+        s"`:repo_owner_name/:repo_name` in spark-package-deps.txt. Found: $package_name")
+    }
+    (secondSplit(0), secondSplit(1), version)
+  }
+
+  private def getPythonSparkPackageDeps(parent: Node, orgDeps: Option[Node]): NodeSeq = {
+    val dependencies = orgDeps.orNull
+    if (dependencies != null) {
+      val pythonDeps = new File("python" + JavaFile.separator + "spark-package-deps.txt")
+      if (pythonDeps.exists) {
+        val buffer = new NodeBuffer
+        for (line <- fromFile(pythonDeps).getLines) {
+          val strippedLine = line.trim()
+          if (strippedLine.length > 0 && !strippedLine.startsWith("#")) {
+            val (groupId, artifactId, version) = validateReturnSPDep(strippedLine)
+            def depExists: Boolean = {
+              dependencies.child.foreach { dep =>
+                if ((dep \ "groupId").text == groupId && (dep \ "artifactId").text == artifactId &&
+                  (dep \ "version").text == version) {
+                  return true
+                }
+              }
+              false
+            }
+            if (!depExists) {
+              buffer.append(new Elem(null, "dependency", Null, TopScope, false,
+                new Elem(null, "groupId", Null, TopScope, false, new Text(groupId)),
+                new Elem(null, "artifactId", Null, TopScope, false, new Text(artifactId)),
+                new Elem(null, "version", Null, TopScope, false, new Text(version)))
+              )
+            }
+          }
+        }
+        dependencies.child ++ buffer.result()
+      } else {
+        dependencies.child
+      }
+    } else {
+      Seq[Node]()
+    }
+  }
+
   lazy val baseSparkPackageSettings: Seq[Setting[_]] = {
     Seq(
-      resolvers += "Spark Packages repo" at "https://dl.bintray.com/spark-packages/maven/",
+      resolvers += "Spark Packages Repo" at "https://dl.bintray.com/spark-packages/maven/",
       sparkPackageNamespace := sparkPackageName.value.replace("/", "_"),
-      spDistributionDirectory := target.value,
+      spDistDirectory := target.value,
       // add any Spark dependencies
       libraryDependencies ++= {
         val sparkComponentSet = sparkComponents.value.toSet
@@ -106,13 +161,14 @@ object SparkPackagesPlugin extends AutoPlugin {
         
          pythonBinaries ++ pythonReq pair relativeTo(pythonBase)
       },
-      pomPostProcess in spMakeDistribution := { (node: Node) =>
+      pomPostProcess in spDist := { (node: Node) =>
         val names = sparkPackageName.value.split("/")
         require(names.length == 2,
           s"Please supply a valid sparkPackageName. sparkPackageName must be provided in " +
             s"the format: org_name/repo_name. Currently: ${sparkPackageName.value}")
         val groupId = names(0)
         val artifactId = names(1)
+        val dependencies = (node \ "dependencies").headOption
         val modifiedChildren = node.child.map { n =>
           if (n.label == "groupId") {
             new Elem(n.prefix, n.label, n.attributes, n.scope, true, new Text(groupId))
@@ -121,13 +177,21 @@ object SparkPackagesPlugin extends AutoPlugin {
           } else {
             n
           }
-        }
-        new Elem(node.prefix, node.label, node.attributes, node.scope, true, modifiedChildren:_*)
+        }.filter(_.label != "dependencies")
+        val allDeps = getPythonSparkPackageDeps(node, dependencies)
+        val addedDeps =
+          if (allDeps.length > 0) {
+            modifiedChildren ++ new Elem(null, "dependencies", Null, TopScope,
+              true, allDeps:_*)
+          } else {
+            modifiedChildren
+          }
+        new Elem(node.prefix, node.label, node.attributes, node.scope, true, addedDeps:_*)
       },
-      makePomConfiguration in spMakeDistribution :=
-        makePomConfiguration.value.copy(process = (pomPostProcess in spMakeDistribution).value),
-      makePom in spMakeDistribution := {
-        val config = (makePomConfiguration in spMakeDistribution).value
+      makePomConfiguration in spDist :=
+        makePomConfiguration.value.copy(process = (pomPostProcess in spDist).value),
+      makePom in spDist := {
+        val config = (makePomConfiguration in spDist).value
         IvyActions.makePom(ivyModule.value, config, streams.value.log)
         config.file
       },
@@ -138,7 +202,7 @@ object SparkPackagesPlugin extends AutoPlugin {
           Def.task { throw new IllegalArgumentException("Illegal dependencies.") }
         }
       },
-      spMakeDistribution <<= Def.taskDyn {
+      spDist <<= Def.taskDyn {
         if (validatePackaging.value) {
           Def.task {
             val names = sparkPackageName.value.split("/")
@@ -147,9 +211,9 @@ object SparkPackagesPlugin extends AutoPlugin {
                 s"the format: org_name/repo_name. Currently: ${sparkPackageName.value}")
             val spArtifactName = names(1) + "-" + version.value
             val jar = spPackWithPython.value
-            val pom = (makePom in spMakeDistribution).value
+            val pom = (makePom in spDist).value
 
-            val zipFile = spDistributionDirectory.value / (spArtifactName + ".zip")
+            val zipFile = spDistDirectory.value / (spArtifactName + ".zip")
 
             IO.delete(zipFile)
             IO.zip(Seq(jar -> (spArtifactName + ".jar"), pom -> (spArtifactName + ".pom")), zipFile)
@@ -159,7 +223,22 @@ object SparkPackagesPlugin extends AutoPlugin {
         } else {
           Def.task { throw new IllegalArgumentException("Illegal dependencies.") }
         }
-      }
+      },
+      initialCommands in console :=
+        """
+          |import org.apache.spark.SparkContext
+          |import org.apache.spark.SparkContext._
+          |import org.apache.spark.SparkConf
+          |val conf = new SparkConf()
+          |      .setMaster("local")
+          |      .setAppName("Sbt console + Spark!")
+          |val sc = new SparkContext(conf)
+          |println("Created spark context as sc.")
+        """.stripMargin,
+      cleanupCommands in console :=
+        """
+          |sc.stop()
+        """.stripMargin
     )
   }
 }
