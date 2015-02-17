@@ -1,9 +1,9 @@
-sbt-spark-packages
+sbt-spark-package
 ==================
 
 *Sbt Plugin for Spark Packages*
 
-sbt-spark-packages is a plugin that aims to make the development process of Spark Packages and the use
+sbt-spark-package is a plugin that aims to make the development process of Spark Packages and the use
  of Spark Packages in your applications much simpler.
  
 Requirements
@@ -22,17 +22,6 @@ Simply add the following to `<your_project>/project/plugins.sbt`:
 
   addSbtPlugin("org.spark-packages" % "sbt-spark-package" % "0.1")
 ```
-
-### Manually
-
-* Clone this repository to your local environment
-* Add:
-```scala
-  lazy val sparkPackagesPlugin = RootProject(file("path/to/sbt-spark-packages/repo"))
-
-  lazy val root = Project(id = "plugins", base = file(".")).dependsOn(sparkPackagesPlugin)
-```
-to `<your_project>/project/plugins.sbt`
 
 Usage
 -----
