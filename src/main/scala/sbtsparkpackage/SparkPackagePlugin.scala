@@ -1,15 +1,16 @@
-package sbtsparkpackages
+package sbtsparkpackage
 
 import sbt._
 import Keys._
 import Path.relativeTo
 import sbtassembly.AssemblyPlugin
-import sbtassembly.AssemblyKeys.{assembledMappings, assembly, assemblyPackageScala}
+import sbtassembly.MappingSet
+import sbtassembly.AssemblyKeys.{assembledMappings, assembly}
 import scala.io.Source._
 import scala.xml.{Elem, Node, NodeBuffer, NodeSeq, Null, Text, TopScope}
 import java.io.{File => JavaFile}
 
-object SparkPackagesPlugin extends AutoPlugin {
+object SparkPackagePlugin extends AutoPlugin {
 
   object autoImport {
     val sparkPackageName = settingKey[String]("The name of the Spark Package")
@@ -21,7 +22,6 @@ object SparkPackagesPlugin extends AutoPlugin {
     val sparkPackageNamespace = settingKey[String]("The namespace to use for shading while building " +
       "the assembly jar.")
     val spDist = taskKey[Unit]("Generate a zip archive for distribution on the Spark Packages website.")
-    val spMakeAssembly = taskKey[File]("Generate a fat jar including all dependencies (excluding Spark).")
     val spDistDirectory = settingKey[File]("Directory to output the zip archive.")
     val spPackWithPython = taskKey[File]("Packs the Jar including Python files")
 
@@ -121,6 +121,29 @@ object SparkPackagesPlugin extends AutoPlugin {
     }
   }
 
+  val listPythonBinaries: Def.Initialize[Task[Seq[(File, String)]]] = Def.taskDyn {
+    if (validatePackaging.value) {
+      Def.task {
+        val pythonDirectory: Seq[File] = listFilesRecursively(baseDirectory.value / "python")
+        val pythonBase = baseDirectory.value / "python"
+        val pythonReqPath = baseDirectory.value / "python" / "requirements.txt"
+        // Compile the python files
+        if (pythonDirectory.length > 0) {
+          s"python -m compileall ${(baseDirectory.value / "python")}" !
+        }
+        val pythonReq = if (pythonReqPath.exists()) Seq(pythonReqPath) else Seq()
+        val pythonBinaries = pythonDirectory.filter { f =>
+          f.getPath().indexOf("lib") == -1 && f.getPath().indexOf("bin") == -1 &&
+            f.getPath().indexOf("doc") == -1
+        }.filter(f => f.getPath().indexOf(".pyc") > -1)
+
+        pythonBinaries ++ pythonReq pair relativeTo(pythonBase)
+      }
+    } else {
+      Def.task { throw new IllegalArgumentException("Illegal dependencies.") }
+    }
+  }
+
   lazy val baseSparkPackageSettings: Seq[Setting[_]] = {
     Seq(
       resolvers += "Spark Packages Repo" at "https://dl.bintray.com/spark-packages/maven/",
@@ -149,18 +172,9 @@ object SparkPackagesPlugin extends AutoPlugin {
         names(0) % names(1) % spVersion
       },
       // add any Python binaries when making a distribution
-      mappings in spPackWithPython := (mappings in (Compile, packageBin)).value ++ {
-        val pythonDirectory: Seq[File] = listFilesRecursively(baseDirectory.value / "python")
-        val pythonBase = baseDirectory.value / "python"
-        val pythonReqPath = baseDirectory.value / "python" / "requirements.txt"
-        val pythonReq = if (pythonReqPath.exists()) Seq(pythonReqPath) else Seq()
-        val pythonBinaries = pythonDirectory.filter { f => 
-            f.getPath().indexOf("lib") == -1 && f.getPath().indexOf("bin") == -1 &&
-            f.getPath().indexOf("doc") == -1
-          }.filter(f => f.getPath().indexOf(".pyc") > -1)
-        
-         pythonBinaries ++ pythonReq pair relativeTo(pythonBase)
-      },
+      mappings in spPackWithPython := (mappings in (Compile, packageBin)).value ++ listPythonBinaries.value,
+      assembledMappings in assembly := (assembledMappings in assembly).value ++ 
+        Seq(new MappingSet(None, listPythonBinaries.value.toVector)),
       pomPostProcess in spDist := { (node: Node) =>
         val names = sparkPackageName.value.split("/")
         require(names.length == 2,
@@ -195,34 +209,21 @@ object SparkPackagesPlugin extends AutoPlugin {
         IvyActions.makePom(ivyModule.value, config, streams.value.log)
         config.file
       },
-      spMakeAssembly <<= Def.taskDyn {
-        if (validatePackaging.value) {
-          Def.task { assembly.value }
-        } else {
-          Def.task { throw new IllegalArgumentException("Illegal dependencies.") }
-        }
-      },
-      spDist <<= Def.taskDyn {
-        if (validatePackaging.value) {
-          Def.task {
-            val names = sparkPackageName.value.split("/")
-            require(names.length == 2,
-              s"Please supply a valid sparkPackageName. sparkPackageName must be provided in " +
-                s"the format: org_name/repo_name. Currently: ${sparkPackageName.value}")
-            val spArtifactName = names(1) + "-" + version.value
-            val jar = spPackWithPython.value
-            val pom = (makePom in spDist).value
+      spDist := {
+        val names = sparkPackageName.value.split("/")
+        require(names.length == 2,
+          s"Please supply a valid sparkPackageName. sparkPackageName must be provided in " +
+            s"the format: org_name/repo_name. Currently: ${sparkPackageName.value}")
+        val spArtifactName = names(1) + "-" + version.value
+        val jar = spPackWithPython.value
+        val pom = (makePom in spDist).value
 
-            val zipFile = spDistDirectory.value / (spArtifactName + ".zip")
+        val zipFile = spDistDirectory.value / (spArtifactName + ".zip")
 
-            IO.delete(zipFile)
-            IO.zip(Seq(jar -> (spArtifactName + ".jar"), pom -> (spArtifactName + ".pom")), zipFile)
+        IO.delete(zipFile)
+        IO.zip(Seq(jar -> (spArtifactName + ".jar"), pom -> (spArtifactName + ".pom")), zipFile)
 
-            zipFile
-          }
-        } else {
-          Def.task { throw new IllegalArgumentException("Illegal dependencies.") }
-        }
+        zipFile
       },
       initialCommands in console :=
         """
