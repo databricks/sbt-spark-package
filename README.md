@@ -18,7 +18,7 @@ Setup
 
 Simply add the following to `<your_project>/project/plugins.sbt`:
 ```scala
-  resolvers += "Spark Package Test Repo" at "https://dl.bintray.com/brkyvz/maven"
+  resolvers += "Spark Package Main Repo" at "https://dl.bintray.com/spark-packages/maven"
 
   addSbtPlugin("org.spark-packages" % "sbt-spark-package" % "0.1")
 ```
@@ -56,6 +56,10 @@ override this by providing a value for `spDistDirectory` like:
 
 The slashes should still remain as slashes on a Windows system, don't switch them to backslashes.
 
+You may publish your package locally for testing with `sbt spPublishLocal`.
+
+In addition, `sbt console` will create you a Spark Context for testing your code like the spark-shell.
+
 ### Spark Package Users
 
 Any Spark Packages your package depends on can be added as:
@@ -64,3 +68,8 @@ Any Spark Packages your package depends on can be added as:
  
 We also recommend that you use `sparkVersion` and `sparkComponents` to manage your Spark dependencies.
 In addition, you can use `sbt assembly` to create an uber jar of your project.
+
+Contributions
+-------------
+
+If you encounter bugs or want to contribute, feel free to submit an issue or pull request.

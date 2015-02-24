@@ -1,5 +1,7 @@
 package sbtsparkpackage
 
+import java.util.Locale
+
 import sbt._
 import Keys._
 import Path.relativeTo
@@ -21,15 +23,18 @@ object SparkPackagePlugin extends AutoPlugin {
     val sparkPackageDependencies = settingKey[Seq[String]]("The Spark Package dependencies")
     val sparkPackageNamespace = settingKey[String]("The namespace to use for shading while building " +
       "the assembly jar.")
-    val spDist = taskKey[Unit]("Generate a zip archive for distribution on the Spark Packages website.")
+    val spDist = taskKey[File]("Generate a zip archive for distribution on the Spark Packages website.")
     val spDistDirectory = settingKey[File]("Directory to output the zip archive.")
-    val spPackWithPython = taskKey[File]("Packs the Jar including Python files")
+    val spPackage = taskKey[File]("Packs the Jar including Python files")
+    val spMakePom = taskKey[File]("Generates the modified pom file")
+    val spPublishLocal = taskKey[Unit]("Publish your package to local ivy repository")
+
 
     val defaultSPSettings = Seq(
       sparkPackageDependencies := Seq(),
       sparkComponents := Seq(),
       sparkVersion := "1.2.0",
-      sparkPackageName := "dummy",
+      sparkPackageName := "zyxwvut/abcdefghi",
       spDistDirectory := baseDirectory.value
     )
   }
@@ -39,16 +44,16 @@ object SparkPackagePlugin extends AutoPlugin {
   override def requires = plugins.JvmPlugin && AssemblyPlugin
   override def trigger = allRequirements
 
-  override lazy val buildSettings: Seq[Setting[_]] = defaultSPSettings
-
-  override lazy val projectSettings: Seq[Setting[_]] =
-    Defaults.packageTaskSettings(spPackWithPython, mappings in (Compile, packageBin)) ++
-      baseSparkPackageSettings
-
   def listFilesRecursively(dir: File): Seq[File] = {
     val list = IO.listFiles(dir)
     list.filter(_.isFile) ++ list.filter(_.isDirectory).flatMap(listFilesRecursively)
   }
+
+  override lazy val buildSettings: Seq[Setting[_]] = defaultSPSettings
+
+  override lazy val projectSettings: Seq[Setting[_]] =
+    Defaults.packageTaskSettings(spPackage, mappings in (Compile, spPackage)) ++
+      baseSparkPackageSettings ++ spPublishingSettings
 
   val validatePackaging =
     Def.task {
@@ -67,8 +72,10 @@ object SparkPackagePlugin extends AutoPlugin {
         }
       }.reduce(_ && _)
     }
+  
+  def normalizeName(s: String) = s.toLowerCase(Locale.ENGLISH).replaceAll("""\W+""", "-")
 
-  private def validateReturnSPDep(line: String): (String, String, String) = {
+  def validateReturnSPDep(line: String): (String, String, String) = {
     val firstSplit = line.split("==")
     if (firstSplit.length != 2) {
       throw new IllegalArgumentException("Spark Package dependencies must be supplied as: " +
@@ -84,7 +91,7 @@ object SparkPackagePlugin extends AutoPlugin {
     (secondSplit(0), secondSplit(1), version)
   }
 
-  private def getPythonSparkPackageDeps(parent: Node, orgDeps: Option[Node]): NodeSeq = {
+  def getPythonSparkPackageDeps(parent: Node, orgDeps: Option[Node]): NodeSeq = {
     val dependencies = orgDeps.orNull
     if (dependencies != null) {
       val pythonDeps = new File("python" + JavaFile.separator + "spark-package-deps.txt")
@@ -143,6 +150,33 @@ object SparkPackagePlugin extends AutoPlugin {
       Def.task { throw new IllegalArgumentException("Illegal dependencies.") }
     }
   }
+  
+  def spArtifactName(sp: String, version: String, ext: String=".jar"): String = {
+    spBaseArtifactName(sp, version) + "." + ext
+  }
+
+  def spBaseArtifactName(sp: String, version: String): String = {
+    val names = sp.split("/")
+    require(names.length == 2,
+      s"Please supply a valid sparkPackageName. sparkPackageName must be provided in " +
+        s"the format: org_name/repo_name. Currently: $sp")
+    require(names(0) != "abcdefghi" && names(1) != "zyxwvut",
+      s"Please supply a sparkPackageName. sparkPackageName must be provided in " +
+        s"the format: org_name/repo_name.")
+    normalizeName(names(1)) + "-" + version
+  }
+
+  def spPackageKeys = Seq(spPackage)
+  lazy val spPackages: Seq[TaskKey[File]] =
+    for(task <- spPackageKeys; conf <- Seq(Compile, Test)) yield (task in conf)
+  lazy val spArtifactTasks: Seq[TaskKey[File]] = spMakePom +: spPackages
+
+  def spDeliverTask(config: TaskKey[DeliverConfiguration]) =
+    (ivyModule in spDist, config, update, streams) map { (module, config, _, s) => IvyActions.deliver(module, config, s.log) }
+  def spPublishTask(config: TaskKey[PublishConfiguration], deliverKey: TaskKey[_]) =
+    (ivyModule in spDist, config, streams) map { (module, config, s) =>
+      IvyActions.publish(module, config, s.log)
+    } tag(Tags.Publish, Tags.Network)
 
   lazy val baseSparkPackageSettings: Seq[Setting[_]] = {
     Seq(
@@ -172,51 +206,18 @@ object SparkPackagePlugin extends AutoPlugin {
         names(0) % names(1) % spVersion
       },
       // add any Python binaries when making a distribution
-      mappings in spPackWithPython := (mappings in (Compile, packageBin)).value ++ listPythonBinaries.value,
+      mappings in (Compile, spPackage) := (mappings in (Compile, packageBin)).value ++ listPythonBinaries.value,
       assembledMappings in assembly := (assembledMappings in assembly).value ++ 
         Seq(new MappingSet(None, listPythonBinaries.value.toVector)),
-      pomPostProcess in spDist := { (node: Node) =>
-        val names = sparkPackageName.value.split("/")
-        require(names.length == 2,
-          s"Please supply a valid sparkPackageName. sparkPackageName must be provided in " +
-            s"the format: org_name/repo_name. Currently: ${sparkPackageName.value}")
-        val groupId = names(0)
-        val artifactId = names(1)
-        val dependencies = (node \ "dependencies").headOption
-        val modifiedChildren = node.child.map { n =>
-          if (n.label == "groupId") {
-            new Elem(n.prefix, n.label, n.attributes, n.scope, true, new Text(groupId))
-          } else if (n.label == "artifactId") {
-            new Elem(n.prefix, n.label, n.attributes, n.scope, true, new Text(artifactId))
-          } else {
-            n
-          }
-        }.filter(_.label != "dependencies")
-        val allDeps = getPythonSparkPackageDeps(node, dependencies)
-        val addedDeps =
-          if (allDeps.length > 0) {
-            modifiedChildren ++ new Elem(null, "dependencies", Null, TopScope,
-              true, allDeps:_*)
-          } else {
-            modifiedChildren
-          }
-        new Elem(node.prefix, node.label, node.attributes, node.scope, true, addedDeps:_*)
-      },
-      makePomConfiguration in spDist :=
-        makePomConfiguration.value.copy(process = (pomPostProcess in spDist).value),
-      makePom in spDist := {
-        val config = (makePomConfiguration in spDist).value
-        IvyActions.makePom(ivyModule.value, config, streams.value.log)
+      spMakePom := {
+        val config = makePomConfiguration.value
+        IvyActions.makePom((ivyModule in spDist).value, config, streams.value.log)
         config.file
       },
       spDist := {
-        val names = sparkPackageName.value.split("/")
-        require(names.length == 2,
-          s"Please supply a valid sparkPackageName. sparkPackageName must be provided in " +
-            s"the format: org_name/repo_name. Currently: ${sparkPackageName.value}")
-        val spArtifactName = names(1) + "-" + version.value
-        val jar = spPackWithPython.value
-        val pom = (makePom in spDist).value
+        val spArtifactName = spBaseArtifactName(sparkPackageName.value, version.value)
+        val jar = spPackage.value
+        val pom = spMakePom.value
 
         val zipFile = spDistDirectory.value / (spArtifactName + ".zip")
 
@@ -226,7 +227,13 @@ object SparkPackagePlugin extends AutoPlugin {
         zipFile
       },
       initialCommands in console :=
-        """
+        """ println("Welcome to\n" +
+          |"      ____              __\n" +
+          |"     / __/__  ___ _____/ /__\n" +
+          |"    _\\ \\/ _ \\/ _ `/ __/  '_/\n" +
+          |"   /___/ .__/\\_,_/_/ /_/\\_\\   version \"%s\"\n" +
+          |"      /_/\n" +
+          |"Using Scala \"%s\"\n")
           |import org.apache.spark.SparkContext
           |import org.apache.spark.SparkContext._
           |import org.apache.spark.SparkConf
@@ -235,13 +242,45 @@ object SparkPackagePlugin extends AutoPlugin {
           |      .setAppName("Sbt console + Spark!")
           |val sc = new SparkContext(conf)
           |println("Created spark context as sc.")
-        """.stripMargin,
+        """.format(sparkVersion.value, scalaVersion.value).stripMargin,
       cleanupCommands in console :=
         """
           |sc.stop()
         """.stripMargin
     )
   }
+  
+  def spProjectID = Def.setting {
+    val names = sparkPackageName.value.split("/")
+    require(names.length == 2,
+      s"Please supply a valid sparkPackageName. sparkPackageName must be provided in " +
+        s"the format: org_name/repo_name. Currently: ${sparkPackageName.value}")
+    require(names(0) != "abcdefghi" && names(1) != "zyxwvut",
+      s"Please supply a sparkPackageName. sparkPackageName must be provided in " +
+        s"the format: org_name/repo_name.")
+
+    val base = ModuleID(names(0), normalizeName(names(1)), version.value).artifacts(artifacts.value : _*)
+    apiURL.value match {
+      case Some(u) if autoAPIMappings.value => base.extra(CustomPomParser.ApiURLKey -> u.toExternalForm)
+      case _ => base
+    }
+  }
+  
+  lazy val spPublishingSettings: Seq[Setting[_]] = Seq(
+    publishLocalConfiguration in spPublishLocal := Classpaths.publishConfig(
+      packagedArtifacts.in(spPublishLocal).value, Some(deliverLocal.value),
+      checksums.in(publishLocal).value, logging = ivyLoggingLevel.value),
+    packagedArtifacts in spPublishLocal <<= Classpaths.packaged(spArtifactTasks),
+    packagedArtifact in spMakePom := (artifact in spMakePom value, spMakePom value),
+    artifact in spMakePom := Artifact.pom(spBaseArtifactName(sparkPackageName.value, version.value)),
+    artifacts <<= Classpaths.artifactDefs(spArtifactTasks),
+    deliverLocal in spPublishLocal <<= spDeliverTask(deliverLocalConfiguration),
+    spPublishLocal <<= spPublishTask(publishLocalConfiguration in spPublishLocal, deliverLocal in spPublishLocal),
+    moduleSettings in spPublishLocal := new InlineConfiguration(spProjectID.value,
+      projectInfo.value, allDependencies.value, dependencyOverrides.value, ivyXML.value,
+      ivyConfigurations.value, defaultConfiguration.value, ivyScala.value, ivyValidate.value,
+      conflictManager.value),
+    ivyModule in spDist := { val is = ivySbt.value; new is.Module((moduleSettings in spPublishLocal).value) }
+  )
+
 }
-
-
