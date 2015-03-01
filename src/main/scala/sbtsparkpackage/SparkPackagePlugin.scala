@@ -28,8 +28,7 @@ object SparkPackagePlugin extends AutoPlugin {
     val spPackage = taskKey[File]("Packs the Jar including Python files")
     val spMakePom = taskKey[File]("Generates the modified pom file")
     val spPublishLocal = taskKey[Unit]("Publish your package to local ivy repository")
-
-
+    
     val defaultSPSettings = Seq(
       sparkPackageDependencies := Seq(),
       sparkComponents := Seq(),
@@ -223,7 +222,7 @@ object SparkPackagePlugin extends AutoPlugin {
 
         IO.delete(zipFile)
         IO.zip(Seq(jar -> (spArtifactName + ".jar"), pom -> (spArtifactName + ".pom")), zipFile)
-
+        println(s"\nZip File created at: $zipFile\n")
         zipFile
       },
       initialCommands in console :=
@@ -234,13 +233,15 @@ object SparkPackagePlugin extends AutoPlugin {
           |"   /___/ .__/\\_,_/_/ /_/\\_\\   version \"%s\"\n" +
           |"      /_/\n" +
           |"Using Scala \"%s\"\n")
-          |import org.apache.spark.SparkContext
+          |
           |import org.apache.spark.SparkContext._
-          |import org.apache.spark.SparkConf
-          |val conf = new SparkConf()
-          |      .setMaster("local")
-          |      .setAppName("Sbt console + Spark!")
-          |val sc = new SparkContext(conf)
+          |
+          |val sc = { 
+          |  val conf = new  org.apache.spark.SparkConf()
+          |    .setMaster("local") 
+          |    .setAppName("Sbt console + Spark!")
+          |  new org.apache.spark.SparkContext(conf)
+          |}
           |println("Created spark context as sc.")
         """.format(sparkVersion.value, scalaVersion.value).stripMargin,
       cleanupCommands in console :=

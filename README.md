@@ -20,7 +20,7 @@ Simply add the following to `<your_project>/project/plugins.sbt`:
 ```scala
   resolvers += "Spark Package Main Repo" at "https://dl.bintray.com/spark-packages/maven"
 
-  addSbtPlugin("org.spark-packages" % "sbt-spark-package" % "0.1")
+  addSbtPlugin("org.spark-packages" % "sbt-spark-package" % "0.1.1")
 ```
 
 Usage
