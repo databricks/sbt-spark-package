@@ -28,11 +28,14 @@ object SparkPackagePlugin extends AutoPlugin {
     val spPackage = taskKey[File]("Packs the Jar including Python files")
     val spMakePom = taskKey[File]("Generates the modified pom file")
     val spPublishLocal = taskKey[Unit]("Publish your package to local ivy repository")
-    
+    val spAppendScalaVersion = settingKey[Boolean]("Whether to append the Scala version to the " +
+      "release version")
+
     val defaultSPSettings = Seq(
       sparkPackageDependencies := Seq(),
       sparkComponents := Seq(),
       sparkVersion := "1.2.0",
+      spAppendScalaVersion := false,
       sparkPackageName := "zyxwvut/abcdefghi",
       spDistDirectory := baseDirectory.value
     )
@@ -41,6 +44,7 @@ object SparkPackagePlugin extends AutoPlugin {
   import autoImport._
 
   override def requires = plugins.JvmPlugin && AssemblyPlugin
+
   override def trigger = allRequirements
 
   def listFilesRecursively(dir: File): Seq[File] = {
@@ -51,7 +55,7 @@ object SparkPackagePlugin extends AutoPlugin {
   override lazy val buildSettings: Seq[Setting[_]] = defaultSPSettings
 
   override lazy val projectSettings: Seq[Setting[_]] =
-    Defaults.packageTaskSettings(spPackage, mappings in (Compile, spPackage)) ++
+    Defaults.packageTaskSettings(spPackage, mappings in(Compile, spPackage)) ++
       baseSparkPackageSettings ++ spPublishingSettings
 
   val validatePackaging =
@@ -71,8 +75,8 @@ object SparkPackagePlugin extends AutoPlugin {
         }
       }.reduce(_ && _)
     }
-  
-  def normalizeName(s: String) = s.toLowerCase(Locale.ENGLISH).replaceAll("""\W+""", "-")
+
+  def normalizeName(s: String) = s.toLowerCase(Locale.ENGLISH).replaceAll( """\W+""", "-")
 
   def validateReturnSPDep(line: String): (String, String, String) = {
     val firstSplit = line.split("==")
@@ -146,7 +150,17 @@ object SparkPackagePlugin extends AutoPlugin {
         pythonBinaries ++ pythonReq pair relativeTo(pythonBase)
       }
     } else {
-      Def.task { throw new IllegalArgumentException("Illegal dependencies.") }
+      Def.task {
+        throw new IllegalArgumentException("Illegal dependencies.")
+      }
+    }
+  }
+
+  val packageVersion = Def.setting {
+    if (spAppendScalaVersion.value) {
+        version.value + "-s_" + CrossVersion.binaryScalaVersion(scalaVersion.value)
+    } else {
+      version.value
     }
   }
   
@@ -214,7 +228,7 @@ object SparkPackagePlugin extends AutoPlugin {
         config.file
       },
       spDist := {
-        val spArtifactName = spBaseArtifactName(sparkPackageName.value, version.value)
+        val spArtifactName = spBaseArtifactName(sparkPackageName.value, packageVersion.value)
         val jar = spPackage.value
         val pom = spMakePom.value
 
@@ -260,7 +274,7 @@ object SparkPackagePlugin extends AutoPlugin {
       s"Please supply a sparkPackageName. sparkPackageName must be provided in " +
         s"the format: org_name/repo_name.")
 
-    val base = ModuleID(names(0), normalizeName(names(1)), version.value).artifacts(artifacts.value : _*)
+    val base = ModuleID(names(0), normalizeName(names(1)), packageVersion.value).artifacts(artifacts.value : _*)
     apiURL.value match {
       case Some(u) if autoAPIMappings.value => base.extra(CustomPomParser.ApiURLKey -> u.toExternalForm)
       case _ => base
