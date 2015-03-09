@@ -20,8 +20,12 @@ object SparkPackagePlugin extends AutoPlugin {
     val sparkComponents = settingKey[Seq[String]](
       "The components of Spark this package depends on. e.g. mllib, sql, graphx, streaming. Spark " +
         "Core is included by default if this key is not set.")
+    @deprecated("Use spName", "0.2.0")
+    val sparkPackageName = spName
     val spName = settingKey[String]("The name of the Spark Package")
-    val spDependencies = settingKey[Seq[String]]("The Spark Package dependencies")
+    @deprecated("Use spDependencies", "0.2.0")
+    val sparkPackageDependencies = spDependencies
+    val spDependencies = settingKey[Seq[String]]("The Spark Package dependencies.")
     val spShortDescription = settingKey[String]("The one line description of your Spark Package")
     val spDescription = settingKey[String]("The long description of your Spark Package")
     val spDist = taskKey[File]("Generate a zip archive for distribution on the Spark Packages website.")
@@ -36,7 +40,7 @@ object SparkPackagePlugin extends AutoPlugin {
       "release version")
 
     val defaultSPSettings = Seq(
-      sparkVersion := "1.2.0",
+      sparkVersion := "1.3.0",
       sparkComponents := Seq(),
       spName := "zyxwvut/abcdefghi",
       spDependencies := Seq(),
