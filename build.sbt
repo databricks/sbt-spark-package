@@ -10,7 +10,7 @@ lazy val root = (project in file(".")).
     licenses := Seq("Apache-2.0" -> url("http://opensource.org/licenses/Apache-2.0")),
     publishTo := Some("Spark Package Main Repo" at
       s"https://api.bintray.com/content/spark-packages/maven/spark-packages_sbt-spark-package/${version.value}"),
-    credentials += Credentials(Path.userHome / ".ivy2" / ".sbtcredentials")
+    credentials += Credentials(Path.userHome / ".ivy2" / ".sbtcredentials2")
   )
 
 
