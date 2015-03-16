@@ -10,25 +10,44 @@ import SparkPackagePlugin._
 import java.io.{BufferedInputStream, FileInputStream, InputStream}
 
 object SparkPackageHttp {
-  
-  val SPARK_PACKAGES_HOST = "localhost:4444"
-  
-  val baseLicenseMap = Array("Apache License 2.0", "BSD 3-Clause License", "BSD 2-Clause License",
+
+  private val SPARK_PACKAGES_HOST = "spark-packages.org"
+
+  private val baseLicenseMap = Array("Apache License 2.0", "BSD 3-Clause License", "BSD 2-Clause License",
     "GNU General Public License 2.0", "GNU General Public License 3.0",
     "GNU Lesser General Public License 2.1", "GNU Lesser General Public License 3.0", 
     "MIT License", "Mozilla Public License 2.0", "Eclipse Public License 1.0").zipWithIndex.toMap
-  
-  val licenseMap = baseLicenseMap ++ Array("Apache-2.0", "BSD 3-Clause", "BSD 2-Clause", "GPL-2.0", 
+
+  private val licenseMap = baseLicenseMap ++ Array("Apache-2.0", "BSD 3-Clause", "BSD 2-Clause", "GPL-2.0",
     "GPL-3.0", "LGPL-2.1", "LGPL-3.0", "MIT", "MPL-2.0", "EPL-1.0").zipWithIndex.toMap
-  
-  def getAuth(credentials: Seq[Credentials]): String = {
+
+  private def getAuth(credentials: Seq[Credentials]): String = {
     val creds = Credentials.forHost(credentials, SPARK_PACKAGES_HOST)
     assert(creds.nonEmpty, "Your Spark Package credentials couldn't be found. Please check if " +
-      "you set the host as `spark-packages.org`.")
+      s"you set the host as `$SPARK_PACKAGES_HOST`.")
     val user = creds.head.userName
     val pswd = creds.head.passwd
     val auth: Array[Byte] = Base64.encodeBase64(s"$user:$pswd".getBytes)
     new String(auth)
+  }
+  
+  private def getHomepage(hpKey: String, name: String): String = {
+    val homepage = 
+      if (hpKey.trim.length > 0) {
+        hpKey
+      } else {
+        "https://github.com/" + name
+      }
+    
+    // Check if homepage exists
+    val connection = Http(homepage).asString
+    if (connection.is2xx || connection.is3xx) {
+      homepage
+    } else {
+      throw new IllegalArgumentException(s"Error while accessing url $homepage." +
+        s"\nStatus code: ${connection.code}\nMessage: ${connection.body}\n" +
+        s" Are you sure this webpage really exists?")
+    }
   }
   
   /** Makes a release package request to the Spark Packages website */
@@ -51,8 +70,12 @@ object SparkPackageHttp {
         val git_commit_sha1 = { "git rev-parse HEAD" !!}.trim()
         val archive = dist.value
         val releaseVersion = packageVersion.value
-        val params = Seq("git_commit_sha1" -> git_commit_sha1, "version" -> releaseVersion,
+        var params = Seq("git_commit_sha1" -> git_commit_sha1, "version" -> releaseVersion,
           "license_id" -> licenseId.toString, "name" -> spName.value)
+        if (spIncludeMaven.value) {
+          val mrId = ivyModule.value.moduleDescriptor(streams.value.log).getModuleRevisionId
+          params ++= Seq("maven_coordinate" -> s"${mrId.getOrganisation}:${mrId.getName}")
+        }
         def url = Seq("http:/", SPARK_PACKAGES_HOST, "api", "submit-release").mkString("/")
         
         val fileBytes = new Array[Byte](archive.length.toInt)
@@ -78,12 +101,13 @@ object SparkPackageHttp {
           .postMulti(MultiPart("artifact_zip", archive.getName, "application/zip", 
             new String(Base64.encodeBase64(fileBytes))))
           .header("Authorization", s"Basic $auth")
+          .timeout(connTimeoutMs = 2000, readTimeoutMs = 15000)
           .asString
 
         if (connection.is2xx) {
-          println(s"\nSUCCESS: ${connection.body}\n")
+          println(s"SUCCESS: ${connection.body}")
         } else {
-          println(s"\nERROR: ${connection.body}\n")
+          println(s"ERROR: ${connection.body}")
         }
       }
     }
@@ -92,7 +116,7 @@ object SparkPackageHttp {
   def makeRegisterCall(): Def.Initialize[Task[Unit]] = Def.task {
     assert(credentials.value.nonEmpty, "Please provide your credentials in your build.sbt file")
     val name = spName.value
-    val homepage = "https://github.com/" + name
+    val homepage = getHomepage(spHomepage.value, name)
     val params = Seq("name" -> name, "homepage" -> homepage,
       "short_description" -> spShortDescription.value, "description" -> spDescription.value)
 
@@ -101,12 +125,13 @@ object SparkPackageHttp {
 
     val connection = Http(url).postForm(params)
       .header("Authorization", s"Basic $auth")
+      .timeout(connTimeoutMs = 2000, readTimeoutMs = 15000)
       .asString
 
     if (connection.is2xx) {
-      println(s"\nSUCCESS: ${connection.body}\n")
+      println(s"SUCCESS: ${connection.body}")
     } else {
-      println(s"\nERROR: ${connection.body}\n")
+      println(s"ERROR: ${connection.body}")
     }
   }
   
