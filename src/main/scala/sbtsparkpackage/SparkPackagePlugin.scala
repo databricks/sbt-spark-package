@@ -11,29 +11,60 @@ import sbtassembly.AssemblyKeys.{assembledMappings, assembly}
 import scala.io.Source._
 import scala.xml.{Elem, Node, NodeBuffer, NodeSeq, Null, Text, TopScope}
 import java.io.{File => JavaFile}
+import SparkPackageHttp._
 
 object SparkPackagePlugin extends AutoPlugin {
 
   object autoImport {
-    val sparkPackageName = settingKey[String]("The name of the Spark Package")
+    
+    // Important Keys
+    val sparkVersion = settingKey[String]("The version of Spark to build against.")
     val sparkComponents = settingKey[Seq[String]](
       "The components of Spark this package depends on. e.g. mllib, sql, graphx, streaming. Spark " +
         "Core is included by default if this key is not set.")
-    val sparkVersion = settingKey[String]("The version of Spark to build against.")
-    val sparkPackageDependencies = settingKey[Seq[String]]("The Spark Package dependencies")
-    val sparkPackageNamespace = settingKey[String]("The namespace to use for shading while building " +
-      "the assembly jar.")
+    @deprecated("Use spName", "0.2.0")
+    lazy val sparkPackageName = spName
+    lazy val spName = settingKey[String]("The name of the Spark Package")
+    @deprecated("Use spDependencies", "0.2.0")
+    lazy val sparkPackageDependencies = spDependencies
+    lazy val spDependencies = settingKey[Seq[String]]("The Spark Package dependencies.")
+    
+    // Release packaging related
     val spDist = taskKey[File]("Generate a zip archive for distribution on the Spark Packages website.")
     val spDistDirectory = settingKey[File]("Directory to output the zip archive.")
     val spPackage = taskKey[File]("Packs the Jar including Python files")
     val spMakePom = taskKey[File]("Generates the modified pom file")
     val spPublishLocal = taskKey[Unit]("Publish your package to local ivy repository")
+    val spAppendScalaVersion = settingKey[Boolean]("Whether to append the Scala version to the " +
+      "release version")
     
+    // Package Registeration Related
+    val spRegister = taskKey[Unit]("Register your package to Spark Packages. Requires the user to have logged " +
+      "in to the Spark Packages website.")
+    val spShortDescription = settingKey[String]("The one line description of your Spark Package")
+    val spDescription = settingKey[String]("The long description of your Spark Package")
+    val spHomepage = settingKey[String]("The homepage for your Spark Package. Will be the github repo by default.")
+    
+    // Release Publishing Related
+    val spPublish = taskKey[Unit]("Publish a release to the Spark Packages repository")
+    val spIncludeMaven = settingKey[Boolean]("Include your maven coordinate with your release. The artifacts must " +
+      "be published on Maven Central before running spPublish.")
+    
+    // Misc, worst-case keys
+    val spIgnoreProvided = settingKey[Boolean]("Whether to ignore if Spark dependencies have been configured" +
+      "as \"provided\" or not.")
+
     val defaultSPSettings = Seq(
-      sparkPackageDependencies := Seq(),
+      sparkVersion := "1.3.0",
       sparkComponents := Seq(),
-      sparkVersion := "1.2.0",
-      sparkPackageName := "zyxwvut/abcdefghi",
+      spName := "zyxwvut/abcdefghi",
+      spDependencies := Seq(),
+      spShortDescription := "",
+      spDescription := "",
+      spHomepage := "",
+      spIgnoreProvided := false,
+      spAppendScalaVersion := false,
+      spIncludeMaven := false,
       spDistDirectory := baseDirectory.value
     )
   }
@@ -41,6 +72,7 @@ object SparkPackagePlugin extends AutoPlugin {
   import autoImport._
 
   override def requires = plugins.JvmPlugin && AssemblyPlugin
+
   override def trigger = allRequirements
 
   def listFilesRecursively(dir: File): Seq[File] = {
@@ -51,17 +83,32 @@ object SparkPackagePlugin extends AutoPlugin {
   override lazy val buildSettings: Seq[Setting[_]] = defaultSPSettings
 
   override lazy val projectSettings: Seq[Setting[_]] =
-    Defaults.packageTaskSettings(spPackage, mappings in (Compile, spPackage)) ++
+    Defaults.packageTaskSettings(spPackage, mappings in(Compile, spPackage)) ++
       baseSparkPackageSettings ++ spPublishingSettings
 
+  // spark-streaming-kafka and spark-ganglia are not included in the spark-assembly, therefore it
+  // should be okay to not mark those as provided.
+  val nonProvided = Seq("spark-streaming-", "spark-ganglia")
+  
   val validatePackaging =
     Def.task {
       // Make sure Spark configuration is "provided"
       libraryDependencies.value.map { dep =>
-        if (dep.organization == "org.apache.spark" && dep.configurations != Some("provided")) {
-          sys.error("Please add any Spark dependencies by supplying the sparkVersion " +
-            s"and sparkComponents. Please remove: $dep")
-          false
+        if (dep.organization == "org.apache.spark" && dep.configurations != Some("provided") &&
+          !spIgnoreProvided.value) {
+          var ignore = false
+          for (comp <- nonProvided) {
+            if (dep.name.indexOf(comp) > -1) {
+               ignore = true
+            }
+          }
+          if (ignore) {
+            true
+          } else {
+            sys.error("Please add any Spark dependencies by supplying the sparkVersion " +
+              s"and sparkComponents. Please remove: $dep")
+            false
+          }
         } else if (dep.organization == "org.apache.spark" && dep.revision != sparkVersion.value) {
           sys.error("Please add any Spark dependencies by supplying the sparkVersion " +
             s"and sparkComponents. Please remove: $dep")
@@ -71,8 +118,8 @@ object SparkPackagePlugin extends AutoPlugin {
         }
       }.reduce(_ && _)
     }
-  
-  def normalizeName(s: String) = s.toLowerCase(Locale.ENGLISH).replaceAll("""\W+""", "-")
+
+  def normalizeName(s: String) = s.toLowerCase(Locale.ENGLISH).replaceAll( """\W+""", "-")
 
   def validateReturnSPDep(line: String): (String, String, String) = {
     val firstSplit = line.split("==")
@@ -146,7 +193,17 @@ object SparkPackagePlugin extends AutoPlugin {
         pythonBinaries ++ pythonReq pair relativeTo(pythonBase)
       }
     } else {
-      Def.task { throw new IllegalArgumentException("Illegal dependencies.") }
+      Def.task {
+        throw new IllegalArgumentException("Illegal dependencies.")
+      }
+    }
+  }
+
+  val packageVersion = Def.setting {
+    if (spAppendScalaVersion.value) {
+        version.value + "-s_" + CrossVersion.binaryScalaVersion(scalaVersion.value)
+    } else {
+      version.value
     }
   }
   
@@ -157,10 +214,10 @@ object SparkPackagePlugin extends AutoPlugin {
   def spBaseArtifactName(sp: String, version: String): String = {
     val names = sp.split("/")
     require(names.length == 2,
-      s"Please supply a valid sparkPackageName. sparkPackageName must be provided in " +
+      s"Please supply a valid Spark Package name. spName must be provided in " +
         s"the format: org_name/repo_name. Currently: $sp")
     require(names(0) != "abcdefghi" && names(1) != "zyxwvut",
-      s"Please supply a sparkPackageName. sparkPackageName must be provided in " +
+      s"Please supply a Spark Package name. spName must be provided in " +
         s"the format: org_name/repo_name.")
     normalizeName(names(1)) + "-" + version
   }
@@ -180,7 +237,6 @@ object SparkPackagePlugin extends AutoPlugin {
   lazy val baseSparkPackageSettings: Seq[Setting[_]] = {
     Seq(
       resolvers += "Spark Packages Repo" at "https://dl.bintray.com/spark-packages/maven/",
-      sparkPackageNamespace := sparkPackageName.value.replace("/", "_"),
       spDistDirectory := target.value,
       // add any Spark dependencies
       libraryDependencies ++= {
@@ -194,7 +250,7 @@ object SparkPackagePlugin extends AutoPlugin {
         }
       },
       // add any Spark Package dependencies
-      libraryDependencies ++= sparkPackageDependencies.value.map { sparkPackage =>
+      libraryDependencies ++= spDependencies.value.map { sparkPackage =>
         val splits = sparkPackage.split(":")
         require(splits.length == 2,
           "Spark Packages must be provided in the format: package_name:version.")
@@ -214,7 +270,7 @@ object SparkPackagePlugin extends AutoPlugin {
         config.file
       },
       spDist := {
-        val spArtifactName = spBaseArtifactName(sparkPackageName.value, version.value)
+        val spArtifactName = spBaseArtifactName(spName.value, packageVersion.value)
         val jar = spPackage.value
         val pom = spMakePom.value
 
@@ -225,6 +281,8 @@ object SparkPackagePlugin extends AutoPlugin {
         println(s"\nZip File created at: $zipFile\n")
         zipFile
       },
+      spPublish <<= makeReleaseCall(spDist),
+      spRegister <<= makeRegisterCall,
       initialCommands in console :=
         """ println("Welcome to\n" +
           |"      ____              __\n" +
@@ -252,15 +310,15 @@ object SparkPackagePlugin extends AutoPlugin {
   }
   
   def spProjectID = Def.setting {
-    val names = sparkPackageName.value.split("/")
+    val names = spName.value.split("/")
     require(names.length == 2,
-      s"Please supply a valid sparkPackageName. sparkPackageName must be provided in " +
-        s"the format: org_name/repo_name. Currently: ${sparkPackageName.value}")
+      s"Please supply a valid Spark Package name. spName must be provided in " +
+        s"the format: org_name/repo_name. Currently: ${spName.value}")
     require(names(0) != "abcdefghi" && names(1) != "zyxwvut",
-      s"Please supply a sparkPackageName. sparkPackageName must be provided in " +
+      s"Please supply a Spark Package name. spName must be provided in " +
         s"the format: org_name/repo_name.")
 
-    val base = ModuleID(names(0), normalizeName(names(1)), version.value).artifacts(artifacts.value : _*)
+    val base = ModuleID(names(0), normalizeName(names(1)), packageVersion.value).artifacts(artifacts.value : _*)
     apiURL.value match {
       case Some(u) if autoAPIMappings.value => base.extra(CustomPomParser.ApiURLKey -> u.toExternalForm)
       case _ => base
@@ -273,7 +331,7 @@ object SparkPackagePlugin extends AutoPlugin {
       checksums.in(publishLocal).value, logging = ivyLoggingLevel.value),
     packagedArtifacts in spPublishLocal <<= Classpaths.packaged(spArtifactTasks),
     packagedArtifact in spMakePom := (artifact in spMakePom value, spMakePom value),
-    artifact in spMakePom := Artifact.pom(spBaseArtifactName(sparkPackageName.value, version.value)),
+    artifact in spMakePom := Artifact.pom(spBaseArtifactName(spName.value, version.value)),
     artifacts <<= Classpaths.artifactDefs(spArtifactTasks),
     deliverLocal in spPublishLocal <<= spDeliverTask(deliverLocalConfiguration),
     spPublishLocal <<= spPublishTask(publishLocalConfiguration in spPublishLocal, deliverLocal in spPublishLocal),
