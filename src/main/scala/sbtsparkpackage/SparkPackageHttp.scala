@@ -104,11 +104,7 @@ object SparkPackageHttp {
           .timeout(connTimeoutMs = 2000, readTimeoutMs = 15000)
           .asString
 
-        if (connection.is2xx) {
-          println(s"SUCCESS: ${connection.body}")
-        } else {
-          println(s"ERROR: ${connection.body}")
-        }
+        printResponse(connection)
       }
     }
   }
@@ -127,11 +123,23 @@ object SparkPackageHttp {
       .header("Authorization", s"Basic $auth")
       .timeout(connTimeoutMs = 2000, readTimeoutMs = 15000)
       .asString
-
+    
+    printResponse(connection)
+  }
+  
+  def printResponse(connection: HttpResponse[String]): Unit = {
     if (connection.is2xx) {
       println(s"SUCCESS: ${connection.body}")
     } else {
-      println(s"ERROR: ${connection.body}")
+      val body =
+        if (connection.code == 401) {
+          """Error while authenticating your user credentials. Please make sure your token
+            |provides 'read:org' credentials, and you have properly copied the token. Also
+            |check whether you have admin rights over the repository.""".stripMargin
+        } else {
+          connection.body
+        }
+      println(s"ERROR: ${connection.code} - $body")
     }
   }
   
