@@ -330,7 +330,6 @@ object SparkPackagePlugin extends AutoPlugin {
       checksums.in(publishLocal).value, logging = ivyLoggingLevel.value),
     packagedArtifacts in spPublishLocal <<= Classpaths.packaged(spArtifactTasks),
     packagedArtifact in spMakePom := ((artifact in spMakePom).value, spMakePom.value),
-    // artifact in spMakePom := Artifact.pom(spBaseArtifactName(spName.value, version.value)),
     artifacts <<= Classpaths.artifactDefs(spArtifactTasks),
     deliverLocal in spPublishLocal <<= spDeliverTask(deliverLocalConfiguration),
     spPublishLocal <<= spPublishTask(publishLocalConfiguration in spPublishLocal, deliverLocal in spPublishLocal),
