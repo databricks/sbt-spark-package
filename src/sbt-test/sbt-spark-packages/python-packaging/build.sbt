@@ -2,7 +2,7 @@ version := "0.1"
 
 scalaVersion := "2.10.4"
 
-sparkPackageName := "test/python-packaging"
+spName := "test/python-packaging"
 
 name := "python-packaging"
 
@@ -19,7 +19,7 @@ TaskKey[Unit]("checkZip") <<= (target) map { (target) =>
 
 TaskKey[Unit]("checkAssemblyJar") <<= (crossTarget) map { (crossTarget) =>
   IO.withTemporaryDirectory { dir =>
-    jarContentChecks(crossTarget / "python-packaging-assembly-0.1.jar", false)
+    jarContentChecks(crossTarget / "python-packaging-assembly-0.1.jar", true)
   }
 }
 
@@ -59,8 +59,8 @@ def mustContain(f: File, l: Seq[String]): Unit = {
 }
 def mustExist(f: File, operator: Boolean = true): Unit = {
   if (operator) {
-    if (!f.exists) sys.error("file" + f + " does not exist!")
+    if (!f.exists) sys.error("file " + f + " does not exist!")
   } else {
-    if (f.exists) sys.error("file" + f + " does exist!")
+    if (f.exists) sys.error("file " + f + " does exist!")
   }
 }

@@ -1,9 +1,9 @@
 # check if the zip archive gets created
-> spMakeDistribution
+> spDist
 $ exists target/python-packaging-0.1.zip
 > checkZip
 # check if assembly will be created
-> spMakeAssembly
+> assembly
 $ exists target/scala-2.10/python-packaging-assembly-0.1.jar
 > checkAssemblyJar
 # make sure packageBin doesn't package python content
