@@ -2,6 +2,7 @@ package sbtsparkpackage
 
 import java.util.Locale
 
+import sbt.Package.ManifestAttributes
 import sbt._
 import Keys._
 import Path.relativeTo
@@ -198,9 +199,17 @@ object SparkPackagePlugin extends AutoPlugin {
     }
   }
 
+  val listRSource: Def.Initialize[Task[Seq[(File, String)]]] = Def.taskDyn {
+    if (validatePackaging.value) {
+      Def.task(listFilesRecursively(baseDirectory.value / "R") pair relativeTo(baseDirectory.value))
+    } else {
+      Def.task(throw new IllegalArgumentException("Illegal dependencies."))
+    }
+  }
+
   val packageVersion = Def.setting {
     if (spAppendScalaVersion.value) {
-        version.value + "-s_" + CrossVersion.binaryScalaVersion(scalaVersion.value)
+      version.value + "-s_" + CrossVersion.binaryScalaVersion(scalaVersion.value)
     } else {
       version.value
     }
@@ -260,9 +269,14 @@ object SparkPackagePlugin extends AutoPlugin {
         names(0) % names(1) % spVersion
       },
       // add any Python binaries when making a distribution
-      mappings in (Compile, spPackage) := (mappings in (Compile, packageBin)).value ++ listPythonBinaries.value,
-      assembledMappings in assembly := (assembledMappings in assembly).value ++
-        Seq(new MappingSet(None, listPythonBinaries.value.toVector)),
+      mappings in (Compile, spPackage) := {
+        (mappings in (Compile, packageBin)).value ++ listPythonBinaries.value ++ listRSource.value
+      },
+      assembledMappings in assembly := (assembledMappings in assembly).value ++ Seq(
+        new MappingSet(None, listPythonBinaries.value.toVector),
+        new MappingSet(None, listRSource.value.toVector)),
+      packageOptions += ManifestAttributes(
+        ("Spark-HasRPackage", (listRSource.value.length > 0).toString)),
       spMakePom := {
         val config = makePomConfiguration.value
         IvyActions.makePom((ivyModule in spDist).value, config, streams.value.log)
@@ -339,5 +353,4 @@ object SparkPackagePlugin extends AutoPlugin {
       conflictManager.value),
     ivyModule in spDist := { val is = ivySbt.value; new is.Module((moduleSettings in spPublishLocal).value) }
   )
-
 }
