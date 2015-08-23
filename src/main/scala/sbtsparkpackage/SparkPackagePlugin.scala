@@ -242,6 +242,43 @@ object SparkPackagePlugin extends AutoPlugin {
       IvyActions.publish(module, config, s.log)
     } tag(Tags.Publish, Tags.Network)
 
+  private def getInitialCommandsForConsole: Def.Initialize[String] = Def.settingDyn {
+    val base = """ println("Welcome to\n" +
+      |"      ____              __\n" +
+      |"     / __/__  ___ _____/ /__\n" +
+      |"    _\\ \\/ _ \\/ _ `/ __/  '_/\n" +
+      |"   /___/ .__/\\_,_/_/ /_/\\_\\   version \"%s\"\n" +
+      |"      /_/\n" +
+      |"Using Scala \"%s\"\n")
+      |
+      |import org.apache.spark.SparkContext._
+      |
+      |val sc = {
+      |  val conf = new org.apache.spark.SparkConf()
+      |    .setMaster("local")
+      |    .setAppName("Sbt console + Spark!")
+      |  new org.apache.spark.SparkContext(conf)
+      |}
+      |println("Created spark context as sc.")
+    """.format(sparkVersion.value, scalaVersion.value).stripMargin
+    if (libraryDependencies.value.map(_.name.contains("spark-sql")).reduce(_ || _)) {
+      Def.setting {
+        base +
+          """val sqlContext = {
+            |  val _sqlContext = new org.apache.spark.sql.SQLContext(sc)
+            |  println("SQL context available as sqlContext.")
+            |  _sqlContext
+            |}
+            |import sqlContext.implicits._
+            |import sqlContext.sql
+            |import org.apache.spark.sql.functions._
+          """.stripMargin
+      }
+    } else {
+      Def.setting(base)
+    }
+  }
+
   lazy val baseSparkPackageSettings: Seq[Setting[_]] = {
     Seq(
       resolvers += "Spark Packages Repo" at "https://dl.bintray.com/spark-packages/maven/",
@@ -296,29 +333,8 @@ object SparkPackagePlugin extends AutoPlugin {
       },
       spPublish <<= makeReleaseCall(spDist),
       spRegister <<= makeRegisterCall,
-      initialCommands in console :=
-        """ println("Welcome to\n" +
-          |"      ____              __\n" +
-          |"     / __/__  ___ _____/ /__\n" +
-          |"    _\\ \\/ _ \\/ _ `/ __/  '_/\n" +
-          |"   /___/ .__/\\_,_/_/ /_/\\_\\   version \"%s\"\n" +
-          |"      /_/\n" +
-          |"Using Scala \"%s\"\n")
-          |
-          |import org.apache.spark.SparkContext._
-          |
-          |val sc = {
-          |  val conf = new  org.apache.spark.SparkConf()
-          |    .setMaster("local")
-          |    .setAppName("Sbt console + Spark!")
-          |  new org.apache.spark.SparkContext(conf)
-          |}
-          |println("Created spark context as sc.")
-        """.format(sparkVersion.value, scalaVersion.value).stripMargin,
-      cleanupCommands in console :=
-        """
-          |sc.stop()
-        """.stripMargin
+      initialCommands in console := getInitialCommandsForConsole.value,
+      cleanupCommands in console := "sc.stop()"
     )
   }
 

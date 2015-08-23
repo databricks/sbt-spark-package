@@ -115,7 +115,12 @@ spHomepage := // Set this if you want to specify a web page other than your gith
 
 *spPublish*
 
-You can publish a new release using `sbt spPublish`. The required settings for `spPublish` are:
+You can publish a new release using `sbt spPublish`. The HEAD commit on your local repository will be
+used as the git commit sha for your release. Therefore, please make sure that your local commit is
+indeed the version you would like to make a release for, and that you have pushed that commit to the
+master branch on your remote.
+
+The required settings for `spPublish` are:
 
 ```scala
 // You must have an Open Source License. Some common licenses can be found in: http://opensource.org/licenses
