@@ -2,6 +2,7 @@ package sbtsparkpackage
 
 import java.util.Locale
 
+import sbt.Package.ManifestAttributes
 import sbt._
 import Keys._
 import Path.relativeTo
@@ -198,9 +199,17 @@ object SparkPackagePlugin extends AutoPlugin {
     }
   }
 
+  val listRSource: Def.Initialize[Task[Seq[(File, String)]]] = Def.taskDyn {
+    if (validatePackaging.value) {
+      Def.task(listFilesRecursively(baseDirectory.value / "R") pair relativeTo(baseDirectory.value))
+    } else {
+      Def.task(throw new IllegalArgumentException("Illegal dependencies."))
+    }
+  }
+
   val packageVersion = Def.setting {
     if (spAppendScalaVersion.value) {
-        version.value + "-s_" + CrossVersion.binaryScalaVersion(scalaVersion.value)
+      version.value + "-s_" + CrossVersion.binaryScalaVersion(scalaVersion.value)
     } else {
       version.value
     }
@@ -233,6 +242,43 @@ object SparkPackagePlugin extends AutoPlugin {
       IvyActions.publish(module, config, s.log)
     } tag(Tags.Publish, Tags.Network)
 
+  private def getInitialCommandsForConsole: Def.Initialize[String] = Def.settingDyn {
+    val base = """ println("Welcome to\n" +
+      |"      ____              __\n" +
+      |"     / __/__  ___ _____/ /__\n" +
+      |"    _\\ \\/ _ \\/ _ `/ __/  '_/\n" +
+      |"   /___/ .__/\\_,_/_/ /_/\\_\\   version \"%s\"\n" +
+      |"      /_/\n" +
+      |"Using Scala \"%s\"\n")
+      |
+      |import org.apache.spark.SparkContext._
+      |
+      |val sc = {
+      |  val conf = new org.apache.spark.SparkConf()
+      |    .setMaster("local")
+      |    .setAppName("Sbt console + Spark!")
+      |  new org.apache.spark.SparkContext(conf)
+      |}
+      |println("Created spark context as sc.")
+    """.format(sparkVersion.value, scalaVersion.value).stripMargin
+    if (libraryDependencies.value.map(_.name.contains("spark-sql")).reduce(_ || _)) {
+      Def.setting {
+        base +
+          """val sqlContext = {
+            |  val _sqlContext = new org.apache.spark.sql.SQLContext(sc)
+            |  println("SQL context available as sqlContext.")
+            |  _sqlContext
+            |}
+            |import sqlContext.implicits._
+            |import sqlContext.sql
+            |import org.apache.spark.sql.functions._
+          """.stripMargin
+      }
+    } else {
+      Def.setting(base)
+    }
+  }
+
   lazy val baseSparkPackageSettings: Seq[Setting[_]] = {
     Seq(
       resolvers += "Spark Packages Repo" at "https://dl.bintray.com/spark-packages/maven/",
@@ -260,9 +306,14 @@ object SparkPackagePlugin extends AutoPlugin {
         names(0) % names(1) % spVersion
       },
       // add any Python binaries when making a distribution
-      mappings in (Compile, spPackage) := (mappings in (Compile, packageBin)).value ++ listPythonBinaries.value,
-      assembledMappings in assembly := (assembledMappings in assembly).value ++
-        Seq(new MappingSet(None, listPythonBinaries.value.toVector)),
+      mappings in (Compile, spPackage) := {
+        (mappings in (Compile, packageBin)).value ++ listPythonBinaries.value ++ listRSource.value
+      },
+      assembledMappings in assembly := (assembledMappings in assembly).value ++ Seq(
+        new MappingSet(None, listPythonBinaries.value.toVector),
+        new MappingSet(None, listRSource.value.toVector)),
+      packageOptions += ManifestAttributes(
+        ("Spark-HasRPackage", (listRSource.value.length > 0).toString)),
       spMakePom := {
         val config = makePomConfiguration.value
         IvyActions.makePom((ivyModule in spDist).value, config, streams.value.log)
@@ -282,29 +333,8 @@ object SparkPackagePlugin extends AutoPlugin {
       },
       spPublish <<= makeReleaseCall(spDist),
       spRegister <<= makeRegisterCall,
-      initialCommands in console :=
-        """ println("Welcome to\n" +
-          |"      ____              __\n" +
-          |"     / __/__  ___ _____/ /__\n" +
-          |"    _\\ \\/ _ \\/ _ `/ __/  '_/\n" +
-          |"   /___/ .__/\\_,_/_/ /_/\\_\\   version \"%s\"\n" +
-          |"      /_/\n" +
-          |"Using Scala \"%s\"\n")
-          |
-          |import org.apache.spark.SparkContext._
-          |
-          |val sc = {
-          |  val conf = new  org.apache.spark.SparkConf()
-          |    .setMaster("local")
-          |    .setAppName("Sbt console + Spark!")
-          |  new org.apache.spark.SparkContext(conf)
-          |}
-          |println("Created spark context as sc.")
-        """.format(sparkVersion.value, scalaVersion.value).stripMargin,
-      cleanupCommands in console :=
-        """
-          |sc.stop()
-        """.stripMargin
+      initialCommands in console := getInitialCommandsForConsole.value,
+      cleanupCommands in console := "sc.stop()"
     )
   }
 
@@ -339,5 +369,4 @@ object SparkPackagePlugin extends AutoPlugin {
       conflictManager.value),
     ivyModule in spDist := { val is = ivySbt.value; new is.Module((moduleSettings in spPublishLocal).value) }
   )
-
 }
