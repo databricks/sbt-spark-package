@@ -18,7 +18,7 @@ Setup
 
 Simply add the following to `<your_project>/project/plugins.sbt`:
 ```scala
-  addSbtPlugin("org.spark-packages" % "sbt-spark-package" % "0.2.2")
+  addSbtPlugin("org.spark-packages" % "sbt-spark-package" % "0.2.3")
 ```
 
 Usage
@@ -33,7 +33,7 @@ In your `build.sbt` file include the appropriate values for:
 
 Please specify any Spark dependencies using `sparkVersion` and `sparkComponents`. For example:
 
- * `sparkVersion := "1.3.0" // the Spark Version your package depends on.`
+ * `sparkVersion := "1.4.0" // the Spark Version your package depends on.`
 
  Spark Core will be included by default if no value for `sparkComponents` is supplied. You can add sparkComponents as:
 
