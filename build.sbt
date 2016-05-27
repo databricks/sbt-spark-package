@@ -6,7 +6,7 @@ name := "sbt-spark-package"
 
 organization := "org.spark-packages"
 
-version := "0.2.4-SNAPSHOT"
+version := "0.2.4"
 
 description := "sbt plugin to develop, use, and publish Spark Packages"
 

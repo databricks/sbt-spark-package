@@ -6,6 +6,8 @@ sbt-spark-package [![Build Status](https://travis-ci.org/databricks/sbt-spark-pa
 sbt-spark-package is a plugin that aims to make the development process of Spark Packages and the use
  of Spark Packages in your applications much simpler.
 
+**Please upgrade to version 0.2.4 as spark-packages now supports SSL**.
+
 Requirements
 ============
 
@@ -18,9 +20,9 @@ Setup
 
 Simply add the following to `<your_project>/project/plugins.sbt`:
 ```scala
-  resolvers += "Spark Packages Main repo" at "https://dl.bintray.com/spark-packages/maven"
-
-  addSbtPlugin("org.spark-packages" % "sbt-spark-package" % "0.2.3")
+  resolvers += "bintray-spark-packages" at "https://dl.bintray.com/spark-packages/maven/"
+  
+  addSbtPlugin("org.spark-packages" % "sbt-spark-package" % "0.2.4")
 ```
 
 Usage

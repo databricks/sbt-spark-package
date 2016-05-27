@@ -76,7 +76,7 @@ object SparkPackageHttp {
           val mrId = ivyModule.value.moduleDescriptor(streams.value.log).getModuleRevisionId
           params ++= Seq("maven_coordinate" -> s"${mrId.getOrganisation}:${mrId.getName}")
         }
-        def url = Seq("http:/", SPARK_PACKAGES_HOST, "api", "submit-release").mkString("/")
+        def url = Seq("https:/", SPARK_PACKAGES_HOST, "api", "submit-release").mkString("/")
         
         val fileBytes = new Array[Byte](archive.length.toInt)
         try {
@@ -116,7 +116,7 @@ object SparkPackageHttp {
     val params = Seq("name" -> name, "homepage" -> homepage,
       "short_description" -> spShortDescription.value, "description" -> spDescription.value)
 
-    def url = Seq("http:/", SPARK_PACKAGES_HOST, "api", "submit-package").mkString("/")
+    def url = Seq("https:/", SPARK_PACKAGES_HOST, "api", "submit-package").mkString("/")
     val auth = getAuth(credentials.value)
 
     val connection = Http(url).postForm(params)
