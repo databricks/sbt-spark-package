@@ -1,0 +1,14 @@
+# check if the zip archive gets created
+> spDist
+$ exists target/r-packaging-0.1.zip
+> checkZip
+# check if assembly will be created
+> assembly
+$ exists target/scala-2.10/r-packaging-assembly-0.1.jar
+> checkAssemblyJar
+# make sure packageBin doesn't package r content
+> packageBin
+$ exists target/scala-2.10/r-packaging_2.10-0.1.jar
+> makePom
+$ exists target/scala-2.10/r-packaging_2.10-0.1.pom
+> checkBinJar

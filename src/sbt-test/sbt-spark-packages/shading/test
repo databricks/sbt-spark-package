@@ -1,0 +1,8 @@
+# check if the zip archive gets created
+> spDist
+$ exists target/shading-0.1.zip
+> checkZip
+# check if assembly will be created
+> assembly
+$ exists target/scala-2.10/shading-assembly-0.1.jar
+> checkAssemblyJar

@@ -1,0 +1,2 @@
+# init script
+print "init"
