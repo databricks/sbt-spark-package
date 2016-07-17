@@ -42,9 +42,10 @@ def validatePom(file: File, groupId: String, artifactId: String): Unit = {
 def jarContentChecks(dir: File, python: Boolean): Unit = {
   IO.withTemporaryDirectory { jarDir =>
     IO.unzip(dir, jarDir)
+    jarDir.listFiles().foreach(println)
     mustExist(jarDir / "Main.class")
-    mustExist(jarDir / "setup.pyc", python)
-    mustExist(jarDir / "simple" / "__init__.pyc", python)
+    mustExist(jarDir / "setup.py", python)
+    mustExist(jarDir / "simple" / "__init__.py", python)
     mustExist(jarDir / "requirements.txt", python)
     if (python) {
       mustContain(jarDir / "requirements.txt", Seq("databricks/spark-csv==0.1"))

@@ -35,6 +35,7 @@ object SparkPackagePlugin extends AutoPlugin {
     val spDistDirectory = settingKey[File]("Directory to output the zip archive.")
     val spPackage = taskKey[File]("Packs the Jar including Python files")
     val spMakePom = taskKey[File]("Generates the modified pom file")
+    val spShade = settingKey[Boolean]("Whether to use a shaded assembly jar as the source.")
     val spPublishLocal = taskKey[Unit]("Publish your package to local ivy repository")
     val spAppendScalaVersion = settingKey[Boolean]("Whether to append the Scala version to the " +
       "release version")
@@ -188,7 +189,7 @@ object SparkPackagePlugin extends AutoPlugin {
         val pythonBinaries = pythonDirectory.filter { f =>
           f.getPath().indexOf("lib") == -1 && f.getPath().indexOf("bin") == -1 &&
             f.getPath().indexOf("doc") == -1
-        }.filter(f => f.getPath().indexOf(".pyc") > -1)
+        }.filter(f => f.getPath().endsWith(".py"))
 
         pythonBinaries ++ pythonReq pair relativeTo(pythonBase)
       }
@@ -279,6 +280,14 @@ object SparkPackagePlugin extends AutoPlugin {
     }
   }
 
+  private lazy val spJar = Def.taskDyn {
+    if (spShade.value) {
+      Def.task((assembly in spPackage).value)
+    } else {
+      Def.task(spPackage.value)
+    }
+  }
+
   lazy val baseSparkPackageSettings: Seq[Setting[_]] = {
     Seq(
       resolvers += "Spark Packages Repo" at "https://dl.bintray.com/spark-packages/maven/",
@@ -321,7 +330,7 @@ object SparkPackagePlugin extends AutoPlugin {
       },
       spDist := {
         val spArtifactName = spBaseArtifactName(spName.value, packageVersion.value)
-        val jar = spPackage.value
+        val jar = spJar.value
         val pom = spMakePom.value
 
         val zipFile = spDistDirectory.value / (spArtifactName + ".zip")
@@ -334,7 +343,8 @@ object SparkPackagePlugin extends AutoPlugin {
       spPublish <<= makeReleaseCall(spDist),
       spRegister <<= makeRegisterCall,
       initialCommands in console := getInitialCommandsForConsole.value,
-      cleanupCommands in console := "sc.stop()"
+      cleanupCommands in console := "sc.stop()",
+      spShade := false
     )
   }
 
