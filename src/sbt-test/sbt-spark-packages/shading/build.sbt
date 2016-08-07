@@ -1,33 +1,13 @@
-version := "0.1"
 
-scalaVersion := "2.10.4"
-
-spName := "test/shading"
-
-name := "shading"
-
-organization := "great.test"
-
-assemblyShadeRules in assembly := Seq(
-  ShadeRule.rename("org.apache.commons.**" -> "databricks.commons.@1").inAll)
-
-spShade := true
-
-libraryDependencies += "org.apache.commons" % "commons-weaver-antlib" % "1.2"
-
-assembly in spPackage := assembly.value
+import Shading._
 
 TaskKey[Unit]("checkZip") <<= (target) map { (target) =>
   IO.withTemporaryDirectory { dir =>
     IO.unzip(target / "shading-0.1.zip", dir)
     mustExist(dir / "shading-0.1.jar")
     jarContentChecks(dir / "shading-0.1.jar", python = true)
-  }
-}
-
-TaskKey[Unit]("checkAssemblyJar") <<= (crossTarget) map { (crossTarget) =>
-  IO.withTemporaryDirectory { dir =>
-    jarContentChecks(crossTarget / "shading-assembly-0.1.jar", python = true)
+    validatePom(dir / "shading-0.1.pom", "test", "shading", Seq(
+      "commons-proxy" -> true, "commons-weaver-antlib" -> false))
   }
 }
 
@@ -45,6 +25,22 @@ def jarContentChecks(dir: File, python: Boolean): Unit = {
     if (python) {
       mustContain(jarDir / "requirements.txt", Seq("databricks/spark-csv==0.1"))
     }
+  }
+}
+def validatePom(file: File, groupId: String, artifactId: String, dependencies: Seq[(String, Boolean)]): Unit = {
+  import scala.xml.XML
+  mustExist(file)
+  val pom = XML.loadFile(file)
+  val givenGroupId = (pom \ "groupId").text
+  val givenArtifactId = (pom \ "artifactId").text
+  assert(groupId == givenGroupId, s"groupId in pom file is wrong. $givenGroupId != $groupId")
+  assert(givenArtifactId == artifactId, s"artifactId in pom file is wrong. $givenArtifactId != $artifactId")
+  val pomDependencies = (pom \ "dependencies")
+  dependencies.foreach { case (artifact, shouldExist) =>
+    val exists = pomDependencies.exists { dependency =>
+      (dependency \ "dependency" \ "artifactId").text == artifact
+    }
+    assert(exists == shouldExist, s"Exists: $exists, shouldExist: $shouldExist. $pomDependencies")
   }
 }
 def mustContain(f: File, l: Seq[String]): Unit = {
