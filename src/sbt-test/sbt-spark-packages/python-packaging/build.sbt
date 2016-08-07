@@ -42,7 +42,6 @@ def validatePom(file: File, groupId: String, artifactId: String): Unit = {
 def jarContentChecks(dir: File, python: Boolean): Unit = {
   IO.withTemporaryDirectory { jarDir =>
     IO.unzip(dir, jarDir)
-    jarDir.listFiles().foreach(println)
     mustExist(jarDir / "Main.class")
     mustExist(jarDir / "setup.py", python)
     mustExist(jarDir / "simple" / "__init__.py", python)
