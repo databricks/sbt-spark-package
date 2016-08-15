@@ -21,7 +21,7 @@ Setup
 Simply add the following to `<your_project>/project/plugins.sbt`:
 ```scala
   resolvers += "bintray-spark-packages" at "https://dl.bintray.com/spark-packages/maven/"
-  
+
   addSbtPlugin("org.spark-packages" % "sbt-spark-package" % "0.2.4")
 ```
 
@@ -69,6 +69,36 @@ you may set `spAppendScalaVersion := true` in your build file.
 In any case where you really can't specify Spark dependencies using `sparkComponents` (e.g. you have
 exclusion rules) and configure them as `provided` (e.g. standalone jar for a demo), you may use
  `spIgnoreProvided := true` to properly use the `assembly` plugin.
+
+### Including shaded dependencies
+
+Sometimes you may require shading for your package to work in certain environments. sbt-spark-package
+supports publishing shaded dependencies built through the sbt-assembly plugin. To achieve this,
+you will need two projects, one for building the shaded dependency, and one for building the
+distribution ready package.
+
+```scala
+lazy val shaded = Project("shaded", file(".")).settings(
+  libraryDependencies ++= (dependenciesToShade ++
+    nonShadedDependencies.map(_ % "provided")), // don't include any other dependency in your assembly jar
+  target := target.value / "shaded", // have a separate target directory to make sbt happy
+  assemblyShadeRules in assembly := Seq(
+    ShadeRule.rename("blah.**" -> "bleh.@1").inAll
+  )
+) // add all other settings
+
+lazy val distribute = Project("distribution", file(".")).settings(
+  spName := ... // your spark package name
+  target := target.value / "distribution",
+  spShade := true, // THIS IS THE MOST IMPORTANT SETTING
+  assembly in spPackage := (assembly in shaded).value, // this will pick up the shaded jar for distribution
+  libraryDependencies := nonShadedDependencies // have all your non shaded dependencies here so that we can
+                                               // generate a clean pom.
+) // add all other settings
+```
+
+Now you may use `distribution/spDist` to build your zip file, or `distribution/spPublish` to publish a
+new release. For more details on publishing, please refer to the next section.
 
 ### Registering and publishing Spark Packages
 
