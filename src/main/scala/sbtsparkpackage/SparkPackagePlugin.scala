@@ -231,7 +231,7 @@ object SparkPackagePlugin extends AutoPlugin {
     normalizeName(names(1)) + "-" + version
   }
 
-  def spPackageKeys = Seq(spJar.value)
+  def spPackageKeys = Seq(spPackage)
   lazy val spPackages: Seq[TaskKey[File]] =
     for(task <- spPackageKeys; conf <- Seq(Compile, Test)) yield (task in conf)
   lazy val spArtifactTasks: Seq[TaskKey[File]] = spMakePom +: spPackages
