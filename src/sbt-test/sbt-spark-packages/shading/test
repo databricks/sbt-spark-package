@@ -1,0 +1,4 @@
+# check if the zip archive gets created
+> distribution/spDist
+$ exists target/distribution/shading-0.1.zip
+> distribution/checkZip

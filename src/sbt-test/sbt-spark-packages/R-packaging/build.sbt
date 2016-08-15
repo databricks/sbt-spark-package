@@ -2,31 +2,31 @@ version := "0.1"
 
 scalaVersion := "2.10.4"
 
-spName := "test/python-packaging"
+spName := "test/r-packaging"
 
-name := "python-packaging"
+name := "r-packaging"
 
 organization := "awesome.test"
 
 TaskKey[Unit]("checkZip") <<= (target) map { (target) =>
   IO.withTemporaryDirectory { dir =>
-    IO.unzip(target / "python-packaging-0.1.zip", dir)
-    mustExist(dir / "python-packaging-0.1.jar")
-    jarContentChecks(dir / "python-packaging-0.1.jar", true)
-    validatePom(dir / "python-packaging-0.1.pom", "test", "python-packaging")
+    IO.unzip(target / "r-packaging-0.1.zip", dir)
+    mustExist(dir / "r-packaging-0.1.jar")
+    jarContentChecks(dir / "r-packaging-0.1.jar", true)
+    validatePom(dir / "r-packaging-0.1.pom", "test", "r-packaging")
   }
 }
 
 TaskKey[Unit]("checkAssemblyJar") <<= (crossTarget) map { (crossTarget) =>
   IO.withTemporaryDirectory { dir =>
-    jarContentChecks(crossTarget / "python-packaging-assembly-0.1.jar", true)
+    jarContentChecks(crossTarget / "r-packaging-assembly-0.1.jar", true)
   }
 }
 
 TaskKey[Unit]("checkBinJar") <<= (crossTarget) map { (crossTarget) =>
   IO.withTemporaryDirectory { dir =>
-    jarContentChecks(crossTarget / "python-packaging_2.10-0.1.jar", false)
-    validatePom(crossTarget / "python-packaging_2.10-0.1.pom", "awesome.test", "python-packaging_2.10")
+    jarContentChecks(crossTarget / "r-packaging_2.10-0.1.jar", false)
+    validatePom(crossTarget / "r-packaging_2.10-0.1.pom", "awesome.test", "r-packaging_2.10")
   }
 }
 
@@ -39,16 +39,13 @@ def validatePom(file: File, groupId: String, artifactId: String): Unit = {
   assert(groupId == givenGroupId, s"groupId in pom file is wrong. $givenGroupId != $groupId")
   assert(givenArtifactId == artifactId, s"artifactId in pom file is wrong. $givenArtifactId != $artifactId")
 }
-def jarContentChecks(dir: File, python: Boolean): Unit = {
+def jarContentChecks(dir: File, r: Boolean): Unit = {
   IO.withTemporaryDirectory { jarDir =>
     IO.unzip(dir, jarDir)
     mustExist(jarDir / "Main.class")
-    mustExist(jarDir / "setup.py", python)
-    mustExist(jarDir / "simple" / "__init__.py", python)
-    mustExist(jarDir / "requirements.txt", python)
-    if (python) {
-      mustContain(jarDir / "requirements.txt", Seq("databricks/spark-csv==0.1"))
-    }
+    mustExist(jarDir / "R" / "pkg" / "R" / "hello.R", r)
+    mustExist(jarDir / "R" / "pkg" / "DESCRIPTION", r)
+    mustExist(jarDir / "R" / "pkg" / "NAMESPACE", r)
   }
 }
 def mustContain(f: File, l: Seq[String]): Unit = {
