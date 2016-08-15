@@ -97,6 +97,8 @@ lazy val distribute = Project("distribution", file(".")).settings(
 ) // add all other settings
 ```
 
+Now you may use `distribution/spDist` to build your zip file, or `distribution/spPublish` to publish a
+new release. For more details on publishing, please refer to the next section.
 
 ### Registering and publishing Spark Packages
 
