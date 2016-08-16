@@ -3,8 +3,7 @@ sbt-spark-package [![Build Status](https://travis-ci.org/databricks/sbt-spark-pa
 
 *Sbt Plugin for Spark Packages*
 
-sbt-spark-package is a plugin that aims to make the development process of Spark Packages and the use
- of Spark Packages in your applications much simpler.
+sbt-spark-package is a Sbt plugin that aims to simplify the use and development of Spark Packages.
 
 **Please upgrade to version 0.2.4+ as spark-packages now supports SSL**.
 
