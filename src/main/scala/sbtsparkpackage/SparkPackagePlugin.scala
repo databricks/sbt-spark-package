@@ -175,23 +175,25 @@ object SparkPackagePlugin extends AutoPlugin {
     }
   }
 
-  val listPythonBinaries: Def.Initialize[Task[Seq[(File, String)]]] = Def.taskDyn {
+  val listPythonFiles: Def.Initialize[Task[Seq[(File, String)]]] = Def.taskDyn {
     if (validatePackaging.value) {
       Def.task {
-        val pythonDirectory: Seq[File] = listFilesRecursively(baseDirectory.value / "python")
         val pythonBase = baseDirectory.value / "python"
-        val pythonReqPath = baseDirectory.value / "python" / "requirements.txt"
-        // Compile the python files
-        if (pythonDirectory.length > 0) {
-          s"python -m compileall ${(baseDirectory.value / "python")}" !
-        }
+        val pythonReqPath = pythonBase / "requirements.txt"
         val pythonReq = if (pythonReqPath.exists()) Seq(pythonReqPath) else Seq()
-        val pythonBinaries = pythonDirectory.filter { f =>
-          f.getPath().indexOf("lib") == -1 && f.getPath().indexOf("bin") == -1 &&
-            f.getPath().indexOf("doc") == -1
-        }.filter(f => f.getPath().endsWith(".py"))
-
-        pythonBinaries ++ pythonReq pair relativeTo(pythonBase)
+        // Compile the python files
+        if (pythonBase.exists()) {
+          s"python -m compileall ${pythonBase}" !
+        }
+        val pythonExcludeDirs = pythonBase / "lib" :: pythonBase / "doc" :: pythonBase / "bin" :: Nil
+        val pythonFiles = listFilesRecursively(pythonBase)
+          .filter(_.getPath.endsWith(".py"))
+          .filterNot { file =>
+            pythonExcludeDirs.exists { base =>
+              IO.relativize(base, file).nonEmpty
+            }
+          }
+        pythonFiles ++ pythonReq pair relativeTo(pythonBase)
       }
     } else {
       Def.task {
@@ -316,10 +318,10 @@ object SparkPackagePlugin extends AutoPlugin {
       },
       // add any Python binaries when making a distribution
       mappings in (Compile, spPackage) := {
-        (mappings in (Compile, packageBin)).value ++ listPythonBinaries.value ++ listRSource.value
+        (mappings in (Compile, packageBin)).value ++ listPythonFiles.value ++ listRSource.value
       },
       assembledMappings in assembly := (assembledMappings in assembly).value ++ Seq(
-        new MappingSet(None, listPythonBinaries.value.toVector),
+        new MappingSet(None, listPythonFiles.value.toVector),
         new MappingSet(None, listRSource.value.toVector)),
       packageOptions += ManifestAttributes(
         ("Spark-HasRPackage", (listRSource.value.length > 0).toString)),
