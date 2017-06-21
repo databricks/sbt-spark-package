@@ -30,6 +30,12 @@ object Shading extends Build {
     target := target.value / "distribution",
     spShade := true,
     assembly in spPackage := (assembly in shaded).value,
-    libraryDependencies := nonShadedDependencies
+    libraryDependencies ++= nonShadedDependencies,
+    packageBin := {
+      val shadedJar = (assembly in shaded).value
+      val targetJar = new File(target.value, name.value + "-" + version.value + ".jar")
+      IO.move(shadedJar, targetJar)
+      targetJar
+    }
   ).settings(commonSettings: _*)
 }
